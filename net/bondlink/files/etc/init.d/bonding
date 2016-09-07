@@ -1,0 +1,716 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006-2011 OpenWrt.org
+
+. $IPKG_INSTROOT/lib/functions/network.sh
+
+START=99
+USE_PROCD=1
+PROG=bonding
+DELAY=5
+
+LIST_SEP="
+"
+
+IPBINARY="/usr/sbin/ip"
+ROUTEBINARY="/sbin/route"
+IFCONFIGBINARY="/sbin/ifconfig"
+OPENVPNBINARY="/usr/sbin/openvpn"
+SYSFSROOT="/sys/class/net"
+BONDING_MASTERS="bonding_masters"
+RUNDIR="/var/run"
+CONFDIR="/var/etc"
+PREUPSCRIPT="/etc/bonding/bonding-preup.sh"
+UPSCRIPT="/etc/bonding/bonding-up.sh"
+PREDOWNSCRIPT="/etc/bonding/bonding-predown.sh"
+DOWNSCRIPT="/etc/bonding/bonding-down.sh"
+WATCHBOND="/etc/bonding/watchbond.sh"
+WATCHDOGACTION="/etc/init.d/bonding restart"
+MANAGEMENT_INTERFACE="1"
+
+EXTRA_COMMANDS="d_start d_stop status test"
+EXTRA_HELP="	d_start	Start in debug mode (no action taken)	
+	d_stop	Stop in debug mode (no action taken)
+	status	Show bonding status
+	test	Run speedtest (requires python and python-expat)"
+
+LOGGER="logger -t ${PROG}"
+#LOGGER="echo"
+
+logmessage ()
+{
+	${LOGGER} "$@"
+}
+
+shell_command() 
+{
+	if [ -z "${DEBUG}" ]; then
+		logmessage "${2}"
+		eval "${2}"
+	else
+		debug "${1}: ${2}"
+	fi
+
+}
+
+# add_source_route(routing table, wanip)
+del_source_route() 
+{
+	
+	local function_name="del_source_route"
+	local routecmd
+
+	debug "${function_name}: routing_table=${1} wanip=${2}"
+
+	routecmd="${IPBINARY} rule del from ${2} 2> /dev/null"
+	shell_command "${function_name}" "${routecmd}"
+
+	routecmd="${IPBINARY} route del default table ${1} 2> /dev/null"
+	shell_command "${function_name}" "${routecmd}"
+
+}
+
+# add_source_route(routing table, wan_interface, wanip, gateway)
+add_source_route() 
+{
+
+	local function_name="add_source_route"
+	local routecmd
+	local device
+
+	debug "${function_name}: routing_table=${1} wan_interface=${2} wanip=${3} gateway=${4}"
+
+	network_get_device device ${2}
+	if [ -z "${device}" ]; then
+		logmessage "Unable to locate physical device name for logical interface ${2}"
+		return 1
+	fi
+	debug "${function_name}: ${2} has device ${device}"
+
+	routecmd="$IPBINARY rule add from ${3} lookup ${1}"
+	shell_command "${function_name}" "${routecmd}"
+
+	routecmd="${IPBINARY} route add default via ${4} table ${1} dev ${device}"
+	shell_command "${function_name}" "${routecmd}"
+}
+
+
+
+
+# setup_default_route $bond_remoteip
+setup_default_route() 
+{
+
+	local function_name="setup_default_route"
+	local routecmd
+	local bond_remoteip
+
+	config_get bond_remoteip "bond" remote_ipaddr
+	if [ -z "${bond_remoteip}" ]; then
+		logmessage "No bond remote ip specified for ${1}"
+		return 1
+	fi
+
+	routecmd="${ROUTEBINARY} delete default"
+	shell_command "${function_name}" "${routecmd}"
+
+	routecmd="${ROUTEBINARY} add default gw ${bond_remoteip}"
+	shell_command "${function_name}" "${routecmd}"
+}
+
+setup_bonding_interface() 
+{
+	local tunnel_devices_list; eval tunnel_devices_list=\$${1}
+	local function_name="setup_bonding_interface"
+	local bondcmd
+	local bond_interface
+	local bond_localip
+	local bond_netmask
+	local expr
+
+	config_get bond_interface "bond" ifname
+	if [ -z "${bond_interface}" ]; then
+		logmessage "No bond interface specified for ${1}"
+		return 1
+	fi
+	config_get bond_localip "bond" ipaddr
+	if [ -z "${bond_localip}" ]; then
+		logmessage "No bond ip specified for ${1}"
+		return 1
+	fi
+
+	config_get bond_netmask "bond" netmask
+	if [ -z "${bond_netmask}" ]; then
+		logmessage "No bond netmask specified for ${1}"
+		return 1
+	fi
+
+	debug "${function_name}: interface=${bond_interface} ip=${bond_localip} netmask=${bond_netmask} slaves=${tunnel_devices_list}"
+
+	# reset the bonding by first removing the bond interface if it's already present in bonding_masters
+
+	expr="$(cat ${SYSFSROOT}/${BONDING_MASTERS} | sed  -n "s/.*\(${bond_interface}\).*/\1/p")"
+	if [ -n "${expr}" ]; then
+		bondcmd="echo -${expr} > ${SYSFSROOT}/${BONDING_MASTERS}"
+		shell_command "${function_name}" "${bondcmd}"
+	fi
+
+	bondcmd="echo +${bond_interface} > ${SYSFSROOT}/${BONDING_MASTERS}"
+	shell_command "${function_name}" "${bondcmd}"
+
+	# add the previously parsed tunnel devices as slaves
+
+	if [ -n "${tunnel_devices_list}" ]; then
+		for i in ${tunnel_devices_list} ; do 
+			bondcmd="echo \"${i}\" > ${SYSFSROOT}/${bond_interface}/bonding/slaves"
+			shell_command "${function_name}" "${bondcmd}"
+		done
+	fi
+	
+	# ifconfig and up the bonding device
+
+	bondcmd="${IFCONFIGBINARY} ${bond_interface} ${bond_localip} netmask ${bond_netmask}"
+	shell_command "${function_name}" "${bondcmd}"
+
+}
+
+delete_bonding_interface() 
+{
+	local function_name="del_bonding_interface"
+	local bondcmd
+	local bond_interface
+	local expr
+
+	config_get bond_interface "bond" ifname
+	if [ -z "${bond_interface}" ]; then
+		logmessage "No bond interface specified for ${1}"
+		return 1
+	fi
+
+	debug "${function_name}: interface=${bond_interface} ip=${bond_localip} netmask=${bond_netmask} slaves=${tunnel_devices_list}"
+
+	# reset the bonding by removing the bond interface from bonding_masters
+
+	expr="$(cat ${SYSFSROOT}/${BONDING_MASTERS} | sed  -n "s/.*\(${bond_interface}\).*/\1/p")"
+	if [ -n "${expr}" ]; then
+		bondcmd="echo -${expr} > ${SYSFSROOT}/${BONDING_MASTERS}"
+		shell_command "${function_name}" "${bondcmd}"
+	fi
+
+}
+
+append_bools() 
+{
+	local p; local v; local s="${1}"; shift
+	for p in $*; do
+		config_get v "${s}" "${p}"
+		IFS="${LIST_SEP}"
+		for v in ${v}; do
+			[ -n "${v}" ] && (
+				echo ""${p}"" | sed -e 's|_|-|g' >> ${config_file}
+			)
+		done
+		unset IFS
+	done
+}
+
+append_params() 
+{
+	local p; local v; local s="${1}"; shift
+	for p in $*; do
+		config_get v "${s}" "${p}"
+		IFS="${LIST_SEP}"
+		for v in ${v}; do
+			[ -n "${v}" ] && (
+				echo ""${p}" "${v}"" | sed -e 's|_|-|g' >> ${config_file}
+			)
+		done
+		unset IFS
+	done
+}
+
+append_params_quotes() 
+{
+	local p; local v; local s="${1}"; shift
+	for p in $*; do
+		config_get v "${s}" "${p}"
+		IFS="${LIST_SEP}"
+		for v in ${v}; do
+			[ -n "${v}" ] && (
+				echo -n "\""${p} | sed -e 's|/|\\/|g;s|_|-|g' >> ${config_file}; \
+				echo "\": \""${v}"\"," >> ${config_file}
+			)
+		done
+		unset IFS
+	done
+}
+
+openvpn_add_instance() 
+{
+	local function_name="openvpn_add_instance"
+	local syslog="${1}"
+	local dir="${2}"
+	local conf="${3}"
+	local cmd
+
+	cmd="${OPENVPNBINARY} --syslog \"${syslog}\" --cd ${dir} --config ${conf}"
+	logmessage "${cmd}"
+
+	procd_open_instance 
+	procd_set_param command "${OPENVPNBINARY}" 
+	procd_append_param command --syslog "${syslog}" --cd "${dir}" --config "${conf}"
+	#procd_set_param file "${dir}/${conf}"
+	procd_close_instance
+}
+
+start_openvpn() 
+{
+	local function_name="start_openvpn"
+	local z; eval z=\$${1}
+	local syslog
+
+
+	for i in ${z}; do
+		syslog="$(echo ${i} | awk -F '\/' '{print $NF}' | sed  "s/\([A-Za-z0-9_].*\)\.conf/\1/")"
+		debug "start_openvpn:  ${OPENVPNBINARY} --cd ${CONFDIR} --syslog openvpn(${syslog}) --config ${i}"
+		if [ -z "${DEBUG}" ]; then
+			openvpn_add_instance "openvpn(${syslog})" "${CONFDIR}" "${i}"
+		else
+			echo "DEBUG is set"
+		fi
+	done
+
+}
+
+configure_link() 
+{
+	local s="${1}"; local v;
+	local function_name="configure_link"
+	local expr
+	local openvpncmd
+
+	local interface
+	local tunnel
+	local local_port
+	local remote_port
+	local server
+	local local_ipaddr
+	local routing_table
+	local gateway
+
+	[ ! -d "${RUNDIR}" ] && mkdir -p "${RUNDIR}"
+	[ ! -d "${CONFDIR}" ] && mkdir -p "${CONFDIR}"
+
+	config_file="${CONFDIR}/${1}.conf"
+	[ -f "${config_file}" ] && rm "${config_file}"
+
+	debug "${function_name}: writing config file ${config_file}"
+
+	config_get interface "${1}" interface
+	if [ -z "${interface}" ]; then
+		logmessage "No wan interface specified for ${1}"
+		return 1
+	fi
+
+	network_get_ipaddr local_ipaddr ${interface}
+	if [ -z "${local_ipaddr}" ]; then
+		logmessage "No ip address specified for interface ${interface}"
+		return 1
+	fi
+
+	# wait until the wan link is up
+
+	while  ! network_is_up ${interface} ; do
+		debug "${function_name}" "waiting for interface ${interface} to come up"
+		sleep $DELAY
+	done
+
+	config_get tunnel "${1}" tunnel
+	if [ -z "${tunnel}" ]; then
+		logmessage "No tunnel device name specified for ${1}"
+		return 1
+	fi
+	config_get local_port "${1}" local_port
+	if [ -z "${local_port}" ]; then
+		logmessage "No local port specified for ${1}"
+		return 1
+	fi
+	config_get remote_port "${1}" remote_port
+	if [ -z "${remote_port}" ]; then
+		logmessage "No remote port specified for ${1}"
+		return 1
+	fi
+
+	config_get server "${1}" server
+	if [ -z "${server}" ]; then
+		logmessage "No server ip specified for ${1}"
+		return 1
+	fi
+
+	config_get routing_table "${1}" routing_table
+	if [ -z "${routing_table}" ]; then
+		logmessage "No routing table specified for ${1}"
+		return 1
+	fi
+
+	network_get_gateway gateway ${interface} 1
+	if [ -z "${gateway}" ]; then
+		logmessage "No gateway specified for ${1}"
+		return 1
+	fi
+
+	echo "dev ${tunnel}" >> ${config_file}
+	echo "remote ${server} ${remote_port}" >> ${config_file}
+	echo "port ${local_port}" >> ${config_file}
+	echo "local ${local_ipaddr}" >> ${config_file}
+
+	if [ "${MANAGEMENT_INTERFACE}" == "1" ]; then
+		echo "management ${RUNDIR}/openvpn-${1}.sockd unix" >> ${config_file}
+	fi
+
+	# the tunnel devices list is iteratively built up through successive calls
+
+	bond_tunnel_devices="$bond_tunnel_devices +${tunnel}"
+
+	# create the tunnel devices
+
+	openvpncmd="$OPENVPNBINARY --mktun --dev-type tun --dev ${tunnel} > /dev/null 2>&1"
+	shell_command "${function_name}" "$openvpncmd"
+	
+	# Remove any prior source routes before adding them
+
+	del_source_route ${routing_table} ${local_ipaddr} 
+	add_source_route ${routing_table} ${interface} ${local_ipaddr} ${gateway}
+
+	config_foreach read_openvpn_config 'openvpn' ${config_file}
+	openvpn_instances="${openvpn_instances} ${config_file}"
+
+}
+
+disable_link() 
+{
+	local s="${1}"; local v;
+	local function_name="disable_link"
+	local cmd
+
+	local interface
+	local routing_table
+	local local_ipaddr
+	local active
+	local gateway
+
+	config_get interface "${1}" interface
+	if [ -z "${interface}" ]; then
+		logmessage "No wan interface specified for ${1}"
+		return 1
+	fi
+
+	config_get routing_table "${1}" routing_table
+	if [ -z "${routing_table}" ]; then
+		logmessage "No routing table specified for ${1}"
+		return 1
+	fi
+
+	network_get_ipaddr local_ipaddr ${interface}
+	if [ -z "${local_ipaddr}" ]; then
+		logmessage "No ip address specified for interface ${interface}"
+		return 1
+	fi
+
+	# determine if this is the link that would normally hold the default route
+
+	config_get active "${1}" active
+
+	network_get_gateway gateway ${interface}  1
+	if [ -z "${gateway}" ]; then
+		logmessage "No gateway specified for ${1}"
+		return 1
+	fi
+
+	# Remove any prior source routes before adding them
+	del_source_route ${routing_table} ${local_ipaddr} 
+
+
+	if [ "$active" == "1" ]; then
+		cmd="${ROUTEBINARY} add default gw ${gateway}"
+		shell_command "${function_name}" "${cmd}"
+	fi
+
+}
+
+read_openvpn_config() 
+{
+	local s="${1}"
+	
+	config_file=${2}
+
+	
+	[ ! -d "${RUNDIR}" ] && mkdir -p "${RUNDIR}"
+	[ ! -d "${CONFDIR}" ] && mkdir -p "${CONFDIR}"
+
+
+	# append flags
+	append_bools "$s" \
+		auth_nocache auth_retry auth_user_pass_optional bind ccd_exclusive client client_cert_not_required \
+		client_to_client comp_lzo comp_noadapt disable \
+		disable_occ down_pre duplicate_cn fast_io float http_proxy_retry \
+		ifconfig_noexec ifconfig_nowarn ifconfig_pool_linear management_forget_disconnect management_hold \
+		management_query_passwords management_signal mktun mlock mtu_test mssfix multihome mute_replay_warnings \
+		nobind no_iv no_name_remapping no_replay opt_verify passtos persist_key persist_local_ip \
+		persist_remote_ip persist_tun ping_timer_rem pull push_reset \
+		remote_random rmtun route_noexec route_nopull single_session socks_proxy_retry \
+		suppress_timestamps tcp_nodelay test_crypto tls_client tls_exit tls_server \
+		tun_ipv6 up_restart username_as_common_name
+
+	# append params
+	append_params "$s" \
+		askpass auth auth_user_pass auth_user_pass_verify bcast_buffers ca cert \
+		chroot cipher client_config_dir client_connect client_disconnect connect_freq \
+		connect_retry connect_timeout connect_retry_max crl_verify dev dev_node dev_type dh \
+		engine explicit_exit_notify fragment group hand_window hash_size \
+		http_proxy http_proxy_option http_proxy_timeout ifconfig ifconfig_pool \
+		ifconfig_pool_persist ifconfig_push inactive ipchange iroute keepalive \
+		key key_method keysize learn_address link_mtu lladdr local log log_append \
+		lport management management_log_cache max_clients \
+		max_routes_per_client mode mtu_disc mute nice ns_cert_type ping \
+		ping_exit ping_restart pkcs12 plugin port port_share prng proto rcvbuf \
+		redirect_gateway remap_usr1 remote remote_cert_eku remote_cert_ku remote_cert_tls \
+		reneg_bytes reneg_pkts reneg_sec \
+		replay_persist replay_window resolv_retry route route_delay route_gateway \
+		route_metric route_up rport script_security secret server server_bridge setenv shaper sndbuf \
+		socks_proxy status status_version syslog tcp_queue_limit tls_auth \
+		tls_cipher tls_remote tls_timeout tls_verify tmp_dir topology tran_window \
+		tun_mtu tun_mtu_extra txqueuelen up_delay user verb down push up
+
+}
+
+link_status() 
+{
+	local function_name="link_status"
+	local domain_socket
+	local routing_table
+	local tunnel
+	local socatbin
+
+	if [ "${MANAGEMENT_INTERFACE}" != "1" ]; then
+		return 1
+	fi
+	socatbin="$(which socat)"
+	if [ -z "${socatbin}" ]; then
+		logmessage "Cannot locate socat binary"
+	fi
+
+	domain_socket="$RUNDIR/openvpn-${1}.sockd"
+	if [ -f "${domain_socket}" ]; then
+		logmessage "No domain socket found for ${1}"
+	fi
+
+	config_get tunnel "${1}" tunnel
+	if [ -z "${tunnel}" ]; then
+		logmessage "Cannot find tunnel device for ${1}"
+		return 1
+	fi
+
+	echo
+	echo -n "${1} connection state: "
+	echo -e "state" | ${socatbin} - UNIX-CONNECT:\"${domain_socket}\"  | sed "3,$ d" | sed "1,1 d" 
+	echo
+	ifconfig ${tunnel}
+	echo -e "status" | ${socatbin} - UNIX-CONNECT:\"${domain_socket}\" | sed "1,3 d" | sed "10,$ d" | sed "s/\(^.*\)/\\t  \1/"
+
+	config_get bond_interface "bond" ifname
+	if [ -z "${bond_interface}" ]; then
+		logmessage "No bond interface specified for ${1}"
+		return 1
+	fi
+
+	echo
+
+}
+
+start_watchdog()
+{
+	local s=""
+	local bond_gateway
+	local watchdog
+	local watchdog_ip
+	local watchdog_period='10'
+	local watchdog_timeout='60'
+	local watchdog_action="${WATCHDOGACTION}"
+
+	if [ -n "${DEBUG}" ]; then
+		return 0
+	fi
+
+	config_get watchdog "bond" watchdog
+	if [ -z ${watchdog} ]; then
+		return 0
+	fi
+
+	config_get bond_gateway "bond" remote_ipaddr
+	config_get watchdog_ip "bond" watchdog_ip ${bond_gateway}
+	config_get watchdog_period "bond" watchdog_period '10'
+	config_get watchdog_timeout "bond" watchdog_timeout '60'
+	config_get watchdog_action "bond" watchdog_action "/etc/init.d/bonding restart"
+
+	procd_open_instance 
+	procd_set_param command "${WATCHBOND}" 
+	procd_append_param command "${watchdog_timeout}" "${watchdog_ip}" "${watchdog_period}" "${watchdog_action}"
+	procd_close_instance
+}
+
+
+boot()
+{
+	QUIET=1
+	/usr/sbin/modprobe ${PROG} > /dev/null 2>&1
+	start
+}
+
+d_start()
+{
+	DEBUG="echo"
+	start
+}
+
+d_stop()
+{
+	DEBUG="echo"
+	stop
+}
+
+restart_service()
+{
+	return 0
+}
+
+start_service() 
+{
+	local function_name="start"
+	local expr
+
+	if [ -f "${PREUPSCRIPT}" ]; then
+		shell_command "start_service" "${PREUPSCRIPT}"
+	fi
+
+	expr="$(lsmod | grep ${PROG})"
+	if [ -z "${expr}" ]; then
+		logmessage "Bonding module not loaded"
+		return 1
+	fi
+
+	config_load 'bonding'
+
+
+	# this is a little ugly, but we can't pass parameters in to the callback by reference
+	# and we need to parse the config sections completely before setting up the bond device.
+	# append the tunnel devices and config files onto a local variable that we can use later
+
+	local bond_tunnel_devices=""
+	local openvpn_instances=""
+	config_foreach configure_link 'link'
+
+	setup_bonding_interface bond_tunnel_devices
+
+	start_openvpn openvpn_instances
+
+	setup_default_route 
+
+	start_watchdog
+
+	if [ -f "${UPSCRIPT}" ]; then
+		shell_command "start_service" "${UPSCRIPT}"
+	fi
+}
+
+stop_service() 
+{
+	local function_name="stop"
+	local expr
+
+	if [ -f "${PREDOWNSCRIPT}" ]; then
+		shell_command "start_service" "${PREDOWNSCRIPT}"
+	fi
+
+	config_load 'bonding'
+
+	local bond_tunnel_devices=""
+	local openvpn_instances=""
+	config_foreach disable_link 'link'
+
+	delete_bonding_interface 
+
+	if [ -f "${DOWNSCRIPT}" ]; then
+		shell_command "start_service" "${DOWNSCRIPT}"
+	fi
+}
+
+
+status()
+{
+	local function_name="status"
+
+	config_load 'bonding'
+
+	config_foreach link_status 'link'
+
+	config_get bond_interface "bond" ifname
+	if [ -z "${bond_interface}" ]; then
+		logmessage "No bond interface specified for ${1}"
+		return 1
+	fi
+
+	echo
+	echo "Bonding device ${bond_interface} status:"
+	echo
+	ifconfig ${bond_interface}
+}
+
+test()
+{
+	local function_name="status"
+	local pythonbin="$(which python)"
+	local pythonexpat="$(opkg find python-expat)"
+	local speedtest="$(which speedtest_cli)"
+
+	if [ -z "${pythonbin}" ]; then
+		logmessage "Python is not installed"
+		return 1
+	fi
+
+	if [ -z "${pythonexpat}" ]; then
+		logmessage "Python expat module is not installed"
+		return 1
+	fi
+
+	if [ -z "${speedtest}" ]; then
+		wget -O /usr/bin/speedtest_cli --no-check-certificate \
+			https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest_cli.py
+		chmod 755 /usr/bin/speedtest_cli
+	fi
+
+	local bond_interface
+	local bond_ipaddr
+
+	config_load 'bonding'
+
+	config_get bond_interface "bond" ifname
+	if [ -z "${bond_interface}" ]; then
+		logmessage "No bond interface specified"
+		return 1
+	fi
+
+	if  !  network_is_up "${bond_interface}" ; then
+		logmessage "Bond interface ${bond_interface} is not up"
+		return 1
+	fi
+
+	config_get bond_ipaddr "bond" ipaddr
+	if  [ -z "${bond_ipaddr}" ]; then
+		logmessage "Cannot retrieve ip address for ${bond_interface}"
+		return 1
+	fi
+
+	echo "Testing speed from source ip ${bond_ipaddr}..."
+
+	speedtest_cli --source ${bond_ipaddr} ${@}
+}

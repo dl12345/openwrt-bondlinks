@@ -1,0 +1,15 @@
+#!/bin/sh
+
+if [[ "$ACTION" == "ifup" ]]
+then
+	if [ -x /etc/scripts/ifup-$INTERFACE ]; then
+		source /etc/scripts/ifup-$INTERFACE
+	fi
+fi
+if [[ "$ACTION" == "ifdown" ]]
+then
+	if [ -x /etc/scripts/ifdown-$INTERFACE ]; then
+		source /etc/scripts/ifdown-$INTERFACE
+	fi
+fi
+

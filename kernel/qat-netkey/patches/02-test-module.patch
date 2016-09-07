@@ -1,0 +1,54 @@
+--- a/test/icp_aead_perf_module.c
++++ b/test/icp_aead_perf_module.c
+@@ -140,14 +140,14 @@ static void icp_aead_output_res(icp_aead
+         }
+ 
+         printk("-----------------------------------------------\n");
+-        printk("Number threads:                            %d\n",
++        printk("Number threads:                        %d\n",
+                kp_numThreads);
+-        printk("Number of requests per thread:             %llu\n",
++        printk("Number of requests per thread:         %llu\n",
+                pThreadData->cs.totalRequestsSent);
+-        printk("Pkt Size:                                  %u\n",
++        printk("Pkt Size:                              %u\n",
+                pThreadData->cs.dataLengthInBytes);
+         if (pThreadData->cs.totalRequestsSent > 1000) {
+-                printk("Total number of Cycles:                    %llu\n",
++                printk("Total number of Cycles:                %llu\n",
+                        totalCycles);
+                 if ((cpu_freq != 0) && (time != 0)) {
+                         printk
+@@ -214,7 +214,7 @@ static int icp_aead_perf_run(u32 keysize
+ 
+         if (kp_givenc) {
+                 printk
+-                        ("\nAEAD givencrypt performance: alg %s\n", alg_name);
++                        ("\nAEAD givencrypt performance: alg %s - keysize(%u)\n", alg_name, keysize*8);
+ 
+                 pThreadDataTemp = pThreadData;
+                 /* Create and start threads */
+@@ -261,7 +261,7 @@ static int icp_aead_perf_run(u32 keysize
+         }
+         if (kp_dec) {
+                 printk
+-                        ("\nAEAD decrypt performance: alg %s\n", alg_name);
++                        ("\nAEAD decrypt performance: alg %s - keysize(%u)\n", alg_name, keysize*8);
+ 
+                 pThreadDataTemp = pThreadData;
+                 /* Create and start threads */
+@@ -392,6 +392,14 @@ static int _icp_aead_perf_init(void)
+                                   AES_BLOCK_SIZE, "authenc(hmac(sha512),cbc(aes))");
+                 icp_aead_perf_run(AES_KEYSIZE_128, DIGEST_SIZE_96bits, ICP_AEAD_PERF_AUTH_KEY_LEN,
+                                   AES_BLOCK_SIZE, "authenc(hmac(md5),cbc(aes))");
++                icp_aead_perf_run(AES_KEYSIZE_256, DIGEST_SIZE_96bits, ICP_AEAD_PERF_AUTH_KEY_LEN,
++                                  AES_BLOCK_SIZE, "authenc(hmac(sha1),cbc(aes))");
++                icp_aead_perf_run(AES_KEYSIZE_256, SHA256_DIGEST_SIZE, ICP_AEAD_PERF_AUTH_KEY_LEN,
++                                  AES_BLOCK_SIZE, "authenc(hmac(sha256),cbc(aes))");
++                icp_aead_perf_run(AES_KEYSIZE_256, SHA512_DIGEST_SIZE, ICP_AEAD_PERF_AUTH_KEY_LEN,
++                                  AES_BLOCK_SIZE, "authenc(hmac(sha512),cbc(aes))");
++                icp_aead_perf_run(AES_KEYSIZE_256, DIGEST_SIZE_96bits, ICP_AEAD_PERF_AUTH_KEY_LEN,
++                                  AES_BLOCK_SIZE, "authenc(hmac(md5),cbc(aes))");
+                 icp_aead_perf_run(DES3_EDE_KEY_SIZE, DIGEST_SIZE_96bits, ICP_AEAD_PERF_AUTH_KEY_LEN,
+                                   DES3_EDE_BLOCK_SIZE, "authenc(hmac(sha1),cbc(des3_ede))");
+                 icp_aead_perf_run(DES3_EDE_KEY_SIZE, SHA256_DIGEST_SIZE, ICP_AEAD_PERF_AUTH_KEY_LEN,

@@ -1,0 +1,11 @@
+--- a/quickassist/utilities/osal/src/linux/kernel_space/OsalDevOperations.c
++++ b/quickassist/utilities/osal/src/linux/kernel_space/OsalDevOperations.c
+@@ -145,7 +145,7 @@ OSAL_STATUS osalPCIStateRestore(void* de
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)
+ #if (((!defined(RHEL_MAJOR)) && (LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0))) \
+     || defined(RHEL_70))
+-    if ( pci_load_saved_state(pdev, pstate) ){
++	if ( pci_load_and_free_saved_state(pdev, &pstate) ){
+            return OSAL_FAIL;
+     }
+ #endif

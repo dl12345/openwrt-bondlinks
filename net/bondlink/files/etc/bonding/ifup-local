@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# $DEVICE = physical device name
+# $INTERFACE = interface as defined in /etc/config/network
+
+# Logical interface names as defined in LuCI 
+
+BOND0="bond0"
+BONDIP=""
+TUN0="ov0"
+TUN1="ov1"
+WAN0="wan0"
+WAN1="wan1"
+LINK0RT="link0"
+LINK1RT="link1"
+
+. $IPKG_INSTROOT/lib/functions/network.sh
+
+DEBUG_LOGGER="logger"
+
+if [[ "$INTERFACE" == "$WAN0" ]]
+then
+fi
+
+if [[ "$INTERFACE" == "$WAN1" ]]
+then
+fi
+
+

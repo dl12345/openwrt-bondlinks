@@ -1,0 +1,136 @@
+# Internet link 1 - defaults should be fine. Change the server IP to your server
+
+config link 'link0'
+	option interface 'wan0'
+	option tunnel 'tun0'
+	option local_port '1194'
+	option remote_port '1194'
+	#
+	# The IP address of the data centre server
+	#
+	option server '172.0.0.1'				
+
+	option routing_table 'link0'
+	option active '1'
+
+# Internet link 2 - defaults should be fine. Change the server IP to your server
+
+config link 'link1'
+	option interface 'wan1'
+	option tunnel 'tun1'
+	option local_port '1195'
+	option remote_port '1195'
+	#
+	# The IP address of the data centre server
+	#
+	option server '172.0.0.1'				
+
+	option routing_table 'link1'
+
+config interface 'bond'
+	option ifname 'bond0'
+	#
+	# A private IP address to assign to the local end of the bond link
+	#
+	option ipaddr '10.0.0.2'            	
+	option netmask '255.255.255.0'
+	#
+	# The private IP address of the remote end of the bond link - this must be on the
+	# same network as the local IP address
+	#
+	option remote_ipaddr '10.0.0.1'     	
+	#
+	# Specifies whether to run the watchdog process that restarts the link on loss of connectivity
+	#
+	option watchdog '1'						
+	# 
+	# The IP address of the host to ping. This can be, for example, your server IP of a Google DNS server
+	#
+	option watchdog_ip '8.8.8.8'	
+	# 
+	# Amount of seconds between pings
+	#
+	option watchdog_period '5'				
+	# 
+	# timeout after which action script is called
+	#
+	option watchdog_timeout '30'			
+	#
+	# Action script to call in case of loss of link connectivity
+	#
+	option watchdog_action '/etc/bonding/restartbonding.sh'
+
+# Don't change the values below unless you have a good reason to do so and you understand what you're doing
+ 
+config openvpn 
+	option client '1'
+	option dev_type 'tun'
+	option proto 'udp'
+	option fragment '1400'
+	option mssfix '1'
+	option persist_key '1'
+	option persist_tun '1'
+	option replay_window '512'
+	option mute_replay_warnings '1'
+	option verb '2'
+	option cipher 'AES-256-CBC'
+	# 
+	# Generate your certificates and keys with openssl
+	# These are certificates and keys of your local openwrt router
+	#
+	option ca '/etc/openvpn/ca.crt'
+	option cert '/etc/openvpn/openwrt.crt'
+	option key '/etc/openvpn/openwrt.key'
+	option dh '/etc/openvpn/dh.pem'
+	option tls_auth '/etc/openvpn/ta.key 1'
+	option ns_cert_type 'server'
+	option tls_client '1'
+	option txqueuelen '1000'
+	option keepalive '5 30'
+	option nice '-20'
+	option fast_io '1'
+	option replay_window '256 60'
+	option key_method '2'
+	option reneg_sec '3600'
+	option tran_window '900'
+	option comp_lzo '1'
+	option script_security '2'
+	option up_delay '1'
+
+# Don't change the values below unless you have a good reason to do so and you understand what you're doing
+ 
+config openvpn-server 
+	option server '1'
+	option dev_type 'tun'
+	option proto 'udp'
+	option fragment '1400'
+	option mssfix '1'
+	option persist_key '1'
+	option persist_tun '1'
+	option replay_window '512'
+	option mute_replay_warnings '1'
+	option verb '2'
+	option cipher 'AES-256-CBC'
+	# 
+	# Generate your certificates and keys with openssl
+	# These are the certificates and keys of the server
+	#
+	option ca '/etc/openvpn/ca.crt'
+	option cert '/etc/openvpn/server.crt'
+	option key '/etc/openvpn/server.key'
+	option dh '/etc/openvpn/dh.pem'
+	option tls_auth '/etc/openvpn/ta.key 0'
+	option ns_cert_type 'server'
+	option tls_server '1'
+	option txqueuelen '1000'
+	option keepalive '5 15'
+	option nice '-20'
+	option fast_io '1'
+	option replay_window '256 60'
+	option key_method '2'
+	option reneg_sec '3600'
+	option tran_window '900'
+	option comp_lzo '1'
+	option script_security '2'
+	option up_delay '1'
+

@@ -1,0 +1,59 @@
+--- a/quickassist/adf/include/icp_adf_transport_dp.h
++++ b/quickassist/adf/include/icp_adf_transport_dp.h
+@@ -79,7 +79,7 @@
+  * Data plain support function - returns the pointer to next message on the ring
+  * or NULL if there is not enough space.
+  */
+-inline void icp_adf_getQueueMemory(icp_comms_trans_handle trans_handle,
++void icp_adf_getQueueMemory(icp_comms_trans_handle trans_handle,
+                                    Cpa32U numberRequests,
+                                    void** pCurrentQatMsg);
+ /*
+@@ -87,7 +87,7 @@ inline void icp_adf_getQueueMemory(icp_c
+  * Data plain support function - returns the pointer to next message on the ring
+  * or NULL if there is not enough space - it also updates the shadow tail copy.
+  */
+-inline void icp_adf_getSingleQueueAddr(icp_comms_trans_handle trans_handle,
++void icp_adf_getSingleQueueAddr(icp_comms_trans_handle trans_handle,
+                                                void** pCurrentQatMsg);
+ 
+ /*
+@@ -95,26 +95,26 @@ inline void icp_adf_getSingleQueueAddr(i
+  * Data plain support function - increments the tail pointer and returns
+  * the pointer to next message on the ring.
+  */
+-inline void icp_adf_getQueueNext(icp_comms_trans_handle trans_handle,
++void icp_adf_getQueueNext(icp_comms_trans_handle trans_handle,
+                                          void** pCurrentQatMsg);
+ 
+ /*
+  * icp_adf_updateQueueTail
+  * Data plain support function - Writes the tail shadow copy to the device.
+  */
+-inline void icp_adf_updateQueueTail(icp_comms_trans_handle trans_handle);
++void icp_adf_updateQueueTail(icp_comms_trans_handle trans_handle);
+ 
+ /*
+  * icp_adf_isRingEmpty
+  * Data plain support function - check if the ring is empty
+  */
+-inline CpaBoolean icp_adf_isRingEmpty(icp_comms_trans_handle trans_handle);
++CpaBoolean icp_adf_isRingEmpty(icp_comms_trans_handle trans_handle);
+ 
+ /*
+  * icp_adf_pollQueue
+  * Data plain support function - Poll messages from the queue.
+  */
+-inline CpaStatus icp_adf_pollQueue(icp_comms_trans_handle trans_handle,
++CpaStatus icp_adf_pollQueue(icp_comms_trans_handle trans_handle,
+                                                  Cpa32U response_quota);
+ 
+ /*
+@@ -123,6 +123,6 @@ inline CpaStatus icp_adf_pollQueue(icp_c
+  * send. This should only be called on request rings. If the function returns
+  * true then it is ok to call icp_adf_updateQueueTail() function on this ring.
+  */
+-inline CpaBoolean icp_adf_queueDataToSend(icp_comms_trans_handle trans_hnd);
++CpaBoolean icp_adf_queueDataToSend(icp_comms_trans_handle trans_hnd);
+ 
+ #endif /* ICP_ADF_TRANSPORT_DP_H */

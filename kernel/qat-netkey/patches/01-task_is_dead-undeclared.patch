@@ -1,0 +1,10 @@
+--- a/test/icp_aead_perf_module.c
++++ b/test/icp_aead_perf_module.c
+@@ -64,6 +64,7 @@
+ #include "icp_aead_perf.h"
+ 
+ #define DIGEST_SIZE_96bits 12        /* Digest size = 96 bits -> 12 bytes */
++#define task_is_dead(task) ((task)->exit_state != 0)
+ 
+ MODULE_DESCRIPTION("ICP AEAD perf test module");
+ MODULE_AUTHOR("Intel Corporation");

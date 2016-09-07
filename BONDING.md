@@ -25,20 +25,20 @@ The solution I crafted uses a modified kernel bonding driver, some source routin
 Your custom image requires a number of command line programs in order to work. In no specific order, these are 
 
 
-[*]/usr/sbin/ip
-[*]/sbin/route
-[*]/usr/sbin/openvpn
-[*]/usr/bin/socat
-[*]/sbin/ifconfig
+* /usr/sbin/ip
+* /sbin/route
+* /usr/sbin/openvpn
+* /usr/bin/socat
+* /sbin/ifconfig
 
 
 You will also require a number of packages
 
 
-[*]openvpn
-[*]socat
-[*]logger
-[*]python and python-expat for the speedtest
+* openvpn
+* socat
+* logger
+* python and python-expat for the speedtest
 
 The kernel patch, the necessary packages and the scripts are all installed by the bonding package in this repository. **Before** launching a top level make, be sure to run the prepare method of the bonding package to install the kernel patch, otherwise it won't be installed and your bonding won't work. The rest of the steps below are automatically performed on openwrt but the server machine needs to be setup manually. 
 

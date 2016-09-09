@@ -224,7 +224,28 @@ update_wan_zone() {
 	return "${ret}"
 }
 
+
+append_to_openvpn_config() {
+
+
+cat >> /etc/config/openvpn  <<EOF
+
+
+# config openvpn tun0
+#	option enabled 1
+#	option config /etc/openvpn/tun0.conf
+
+# config openvpn tun1
+#	option enabled 1
+#	option config /etc/openvpn/tun1.conf
+
+
+EOF
+
+}
+
 update_wan_zone "bond0"
+append_to_openvpn_config
 
 [[ $? -eq 0 ]] && uci_commit firewall
 exit $?

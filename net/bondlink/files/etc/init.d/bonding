@@ -161,8 +161,18 @@ setup_bonding_interface()
 
 	if [ -n "${tunnel_devices_list}" ]; then
 		for i in ${tunnel_devices_list} ; do 
+
+			# must down the tun inferface first otherwise the add will fail
+
+			bondcmd="ifconfig ${i} down" 
+			shell_command "${function_name}" "${bondcmd}"
+
 			bondcmd="echo \"${i}\" > ${SYSFSROOT}/${bond_interface}/bonding/slaves"
 			shell_command "${function_name}" "${bondcmd}"
+
+			bondcmd="ifconfig ${i} up" 
+			shell_command "${function_name}" "${bondcmd}"
+
 		done
 	fi
 	

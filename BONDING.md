@@ -1006,6 +1006,21 @@ config interface 'ov1'
     option ifname 'tun1'
 ```
 
+# /etc/config/openvpn
+
+```
+
+config openvpn tun0
+	option enabled 1
+	option config /etc/openvpn/tun0.conf
+
+config openvpn tun1
+	option enabled 1
+	option config /etc/openvpn/tun1.conf
+
+
+```
+
 # /etc/config/firewall
 
 ```
